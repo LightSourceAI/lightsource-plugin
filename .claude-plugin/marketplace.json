@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-marketplace.json",
+  "name": "lightsource",
+  "description": "Claude Code plugins for LightSource — automate sourcing workflows via the GraphQL API",
+  "owner": {
+    "name": "LightSource AI",
+    "email": "support@lightsource.ai"
+  },
+  "plugins": [
+    {
+      "name": "lightsource",
+      "description": "Automate sourcing workflows in LightSource: create and manage RFQs, run AI award optimization, sync items and BOMs, and manage suppliers — all via the LightSource GraphQL API.",
+      "author": {
+        "name": "LightSource AI"
+      },
+      "category": "productivity",
+      "source": "./"
+    }
+  ]
+}
