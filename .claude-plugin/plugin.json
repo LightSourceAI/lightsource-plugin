@@ -1,9 +1,18 @@
 {
   "name": "lightsource",
   "description": "Automate sourcing workflows on the LightSource platform",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "author": {
     "name": "LightSource AI",
     "email": "support@lightsource.ai"
+  },
+  "mcpServers": "./mcp-config.json",
+  "userConfig": {
+    "api_key": {
+      "type": "string",
+      "title": "LightSource API key",
+      "description": "From Settings -> API Keys in the LightSource app. Stored in your OS keychain, not in a file. Leave blank to use ~/.config/lightsource/credentials.json instead.",
+      "sensitive": true
+    }
   }
 }

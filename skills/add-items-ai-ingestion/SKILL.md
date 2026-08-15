@@ -16,7 +16,7 @@ Upload one or more files to LightSource and use the AI extraction pipeline to in
 
 ### Step 1 — Upload each file
 
-For each input file, follow the file upload procedure in `graphql-request` (prepare → PUT → finalize). Collect the returned `userFile.id` from each — these are the UserFile IDs passed to Step 2.
+For each input file, follow the file upload procedure in `graphql-request` — normally one `upload_file` call per file. Collect the returned `userFileId` from each; these are the UserFile IDs passed to Step 2.
 
 ### Step 2 — Start AI ingestion batch
 

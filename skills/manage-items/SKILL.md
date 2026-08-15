@@ -123,7 +123,7 @@ Variables:
 
 ### Step 1 — Upload the file
 
-Follow the file upload procedure in `graphql-request` (prepare → PUT → finalize). Capture the returned `userFile.id`.
+Follow the file upload procedure in `graphql-request` — normally a single `upload_file` call, which returns the `userFileId` used below.
 
 ### Step 2 — Attach file to item
 
