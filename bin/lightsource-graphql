@@ -1,0 +1,238 @@
+#!/usr/bin/env bash
+# The single place that resolves LightSource credentials and talks to the API.
+# Skills must call this instead of building their own curl commands, so there is
+# exactly one definition of where the API key comes from.
+#
+# Send a GraphQL request to the LightSource API.
+#
+# Usage:
+#   lightsource-graphql 'query { ... }'
+#   lightsource-graphql 'query Foo($id: ID!) { ... }' '{"id": "abc"}'
+#   lightsource-graphql --variables '{"id": "abc"}' <<'GQL'
+#   query Foo($id: ID!) { ... }
+#   GQL
+#   lightsource-graphql --check     # verify credentials without sending a query
+#
+# Credentials: $LIGHTSOURCE_API_KEY, else api_key in
+# ${XDG_CONFIG_HOME:-~/.config}/lightsource/credentials.json
+# (override with $LIGHTSOURCE_CREDENTIALS_FILE).
+#
+# Exit codes:
+#   0  success
+#   1  usage or transport error
+#   2  API key missing or rejected
+#   3  request sent, response contains a GraphQL errors array
+set -euo pipefail
+
+ENDPOINT="${LIGHTSOURCE_API_ENDPOINT:-https://api.lightsource.ai/graphql}"
+CREDENTIALS_FILE="${LIGHTSOURCE_CREDENTIALS_FILE:-${XDG_CONFIG_HOME:-$HOME/.config}/lightsource/credentials.json}"
+
+# Prints the setup instructions only; callers print the headline that explains
+# whether the key was missing or rejected.
+setup_hint() {
+  cat >&2 <<HINT
+
+Store a working key by running this in a terminal (it does not echo the key):
+
+  mkdir -p "$(dirname "$CREDENTIALS_FILE")"
+  printf 'LightSource API key: '; read -rs LS_KEY; echo
+  (umask 077; printf '{"api_key": "%s"}\\n' "\$LS_KEY" > "$CREDENTIALS_FILE")
+  chmod 600 "$CREDENTIALS_FILE"; unset LS_KEY
+
+Get a key from Settings -> API Keys in the LightSource app.
+For CI or scripted runs, export LIGHTSOURCE_API_KEY instead.
+HINT
+}
+
+read_config_key() {
+  [ -f "$CREDENTIALS_FILE" ] || return 1
+  # Under Git Bash the POSIX mode bits don't reflect the underlying NTFS
+  # permissions, so checking them there only produces false warnings.
+  case "$(uname -s 2>/dev/null || echo unknown)" in
+    MINGW* | MSYS* | CYGWIN*) ;;
+    *)
+      local perms
+      perms=$(stat -c '%a' "$CREDENTIALS_FILE" 2>/dev/null || stat -f '%OLp' "$CREDENTIALS_FILE" 2>/dev/null || echo "")
+      case "$perms" in
+        600 | 400 | "") ;;
+        *) printf 'warning: %s is readable by other users; run chmod 600 on it\n' "$CREDENTIALS_FILE" >&2 ;;
+      esac
+      ;;
+  esac
+  if command -v jq >/dev/null 2>&1; then
+    jq -r '.api_key // empty' "$CREDENTIALS_FILE"
+  else
+    sed -n 's/.*"api_key"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$CREDENTIALS_FILE" | head -n 1
+  fi
+}
+
+# Resolution order: environment variable first so CI and one-off overrides win,
+# then the credentials file that interactive users set up.
+resolve_key() {
+  if [ -n "${LIGHTSOURCE_API_KEY:-}" ]; then
+    printf '%s' "$LIGHTSOURCE_API_KEY"
+    return 0
+  fi
+  local key
+  key=$(read_config_key || true)
+  [ -n "$key" ] || return 1
+  printf '%s' "$key"
+}
+
+QUERY=""
+VARIABLES=""
+CHECK_ONLY=false
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -q | --query)
+      QUERY="${2-}"
+      shift 2
+      ;;
+    -v | --variables)
+      VARIABLES="${2-}"
+      shift 2
+      ;;
+    --endpoint)
+      ENDPOINT="${2-}"
+      shift 2
+      ;;
+    --check)
+      CHECK_ONLY=true
+      shift
+      ;;
+    -h | --help)
+      sed -n '6,24p' "$0" | sed 's/^# \{0,1\}//'
+      exit 0
+      ;;
+    -*)
+      printf 'unknown option: %s\n' "$1" >&2
+      exit 1
+      ;;
+    *)
+      if [ -z "$QUERY" ]; then
+        QUERY="$1"
+      elif [ -z "$VARIABLES" ]; then
+        VARIABLES="$1"
+      else
+        printf 'unexpected argument: %s\n' "$1" >&2
+        exit 1
+      fi
+      shift
+      ;;
+  esac
+done
+
+API_KEY=$(resolve_key || true)
+if [ -z "$API_KEY" ]; then
+  printf 'No LightSource API key found.\n' >&2
+  setup_hint
+  exit 2
+fi
+
+KEY_SOURCE="$([ -n "${LIGHTSOURCE_API_KEY:-}" ] && echo 'LIGHTSOURCE_API_KEY' || echo "$CREDENTIALS_FILE")"
+
+if [ "$CHECK_ONLY" = true ]; then
+  QUERY='query CredentialCheck { session { currentUser { display emailAddress } currentTeam { displayName namespace } } }'
+  VARIABLES=""
+fi
+
+if [ -z "$QUERY" ] && [ ! -t 0 ]; then
+  QUERY=$(cat)
+fi
+if [ -z "$QUERY" ]; then
+  printf 'no GraphQL query given; pass it as an argument, with --query, or on stdin\n' >&2
+  exit 1
+fi
+
+# Build the request body with a JSON encoder so queries and variables containing
+# quotes, newlines, or user-supplied text can't corrupt the payload.
+build_body() {
+  if command -v jq >/dev/null 2>&1; then
+    if [ -n "$VARIABLES" ]; then
+      jq -n --arg query "$QUERY" --argjson variables "$VARIABLES" \
+        '{query: $query, variables: $variables}'
+    else
+      jq -n --arg query "$QUERY" '{query: $query}'
+    fi
+  elif command -v python3 >/dev/null 2>&1; then
+    QUERY="$QUERY" VARIABLES="$VARIABLES" python3 -c '
+import json, os
+body = {"query": os.environ["QUERY"]}
+raw = os.environ.get("VARIABLES") or ""
+if raw.strip():
+    body["variables"] = json.loads(raw)
+print(json.dumps(body))
+'
+  else
+    printf 'neither jq nor python3 is available to encode the request\n' >&2
+    exit 1
+  fi
+}
+
+BODY=$(build_body)
+
+RESPONSE=$(printf '%s' "$BODY" | curl -sS -X POST "$ENDPOINT" \
+  -H 'Content-Type: application/json' \
+  -H "Authorization: Bearer $API_KEY" \
+  -w '\n%{http_code}' \
+  --data-binary @-)
+
+STATUS="${RESPONSE##*$'\n'}"
+PAYLOAD="${RESPONSE%$'\n'*}"
+
+has_errors() {
+  case "$PAYLOAD" in
+    *'"errors"'*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+# An invalid key comes back as HTTP 200 with a GraphQL error and a null session,
+# so the status code alone can't tell a bad key from a bad query.
+rejected_credentials() {
+  case "$STATUS" in 401 | 403) return 0 ;; esac
+  case "$PAYLOAD" in
+    *'"session":null'* | *'"session": null'*) has_errors && return 0 ;;
+  esac
+  return 1
+}
+
+if [ "$CHECK_ONLY" = true ]; then
+  if rejected_credentials; then
+    printf 'Found an API key in %s, but LightSource rejected it.\n' "$KEY_SOURCE" >&2
+    setup_hint
+    exit 2
+  fi
+  if [ "${STATUS#2}" = "$STATUS" ] || has_errors; then
+    printf '%s\n' "$PAYLOAD"
+    printf 'Could not verify the key (HTTP %s). Check network access to %s.\n' "$STATUS" "$ENDPOINT" >&2
+    exit 1
+  fi
+  printf 'Credentials from %s are valid.\n%s\n' "$KEY_SOURCE" "$PAYLOAD"
+  exit 0
+fi
+
+printf '%s\n' "$PAYLOAD"
+
+if rejected_credentials; then
+  printf 'LightSource rejected the API key from %s.\n' "$KEY_SOURCE" >&2
+  setup_hint
+  exit 2
+fi
+
+case "$STATUS" in
+  2*) ;;
+  *)
+    printf 'LightSource API returned HTTP %s\n' "$STATUS" >&2
+    exit 1
+    ;;
+esac
+
+# Exit 3 means the request went through but GraphQL reported errors, so callers
+# never mistake an error payload for success.
+if has_errors; then
+  printf 'The response contains a GraphQL errors array; do not treat this as success.\n' >&2
+  exit 3
+fi
+exit 0

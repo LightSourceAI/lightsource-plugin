@@ -9,7 +9,7 @@ Upload one or more files to LightSource and use the AI extraction pipeline to in
 
 ## Arguments
 
-- Input file path(s) — one or more files to ingest (required)
+- Input file(s) — one or more files to ingest (required). Usually files the user attached to the conversation; a path on disk also works. If the user referred to an attachment but none is available, ask them to drop the file into the prompt box rather than guessing a path.
 - RFQ name or ID — if provided, add approved parts to this RFQ after ingestion (optional)
 
 ## Steps

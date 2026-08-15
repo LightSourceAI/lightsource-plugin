@@ -7,7 +7,7 @@ description: Creates parts from an input file and adds them to an existing RFQ (
 
 - RFQ — either its name (e.g. "Test") or its ID. If a name is given, resolve it first using the RFQ name → ID lookup in `graphql-request`.
 - One of:
-  - Input file path with new parts to create (creates parts then adds them)
+  - An input file with new parts to create (creates parts then adds them) — an attachment from the conversation or a path on disk
   - Part name(s) or part number(s) to search for and add as existing parts
 
 ## Steps — new parts (from file)
