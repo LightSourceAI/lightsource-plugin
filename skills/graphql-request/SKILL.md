@@ -7,37 +7,46 @@ description: Executes a GraphQL query or mutation against the LightSource API. H
 
 Send a GraphQL request to the LightSource API and return the response.
 
-## Endpoint
+## Execution
 
-| GraphQL endpoint                     | API key source                                                                      |
-| ------------------------------------ | ----------------------------------------------------------------------------------- |
-| `https://api.lightsource.ai/graphql` | **Claude Code:** plugin config stores the key in `~/.claude/.credentials.json`; the harness injects it as `$CLAUDE_PLUGIN_OPTION_API_KEY` in skill scripts, otherwise read it directly from the file. **Claude Desktop / manual:** set `$LIGHTSOURCE_API_KEY` as an environment variable. |
+Every request goes through the `lightsource-graphql` command, which the plugin puts on the Bash tool's `PATH`. It owns the endpoint, credential lookup, and JSON encoding, so never build a `curl` call to the API by hand and never read the API key yourself.
+
+Pass the query as the first argument and, when the operation takes variables, a JSON object as the second. Use variables instead of string interpolation so quotes, newlines, and user-supplied text can't corrupt the payload:
+
+```bash
+lightsource-graphql 'mutation Foo($id: ID!) { ... }' '{"id": "abc123"}'
+```
+
+For long queries, pass them on stdin instead:
+
+```bash
+lightsource-graphql --variables '{"id": "abc123"}' <<'GQL'
+mutation Foo($id: ID!) {
+  ...
+}
+GQL
+```
+
+The command prints the raw JSON response on stdout and signals what happened with its exit code:
+
+| Exit | Meaning | What to do |
+| ---- | ------- | ---------- |
+| `0` | Success | Use the `data` payload |
+| `2` | API key missing or rejected | Show the setup instructions the command printed on stderr. Never ask the user to paste their key into the conversation, and never print a key |
+| `3` | Request succeeded, response contains a top-level `errors` array | Report the errors; do not proceed as if the call worked |
+| `1` | Usage or transport error, e.g. no network access to the API | Report it. Repeated permission prompts or connection failures usually mean the Bash tool isn't allowed to reach `api.lightsource.ai` |
+
+Run `lightsource-graphql --check` to confirm the stored key works — it queries the current user and team and exits `2` if the key is missing or rejected. This is the fastest way to diagnose a setup problem before running a real workflow.
+
+## Authentication
+
+`lightsource-graphql` is the single definition of how credentials are found. It reads `$LIGHTSOURCE_API_KEY` if set, otherwise `api_key` from `~/.config/lightsource/credentials.json` (override the path with `$LIGHTSOURCE_CREDENTIALS_FILE`). No other skill, script, or document should restate, duplicate, or reimplement that lookup — delegate here instead.
 
 ## How to use from another skill
 
-Instead of hardcoding a curl command, describe the GraphQL operation needed and note:
+Instead of hardcoding a request, describe the GraphQL operation needed and note:
 
 > "Execute this via the graphql-request skill."
-
-## Execution
-
-Use GraphQL variables instead of string interpolation to avoid JSON escaping issues, especially when passing arrays or user-provided strings:
-
-```bash
-# $CLAUDE_PLUGIN_OPTION_API_KEY is injected by the harness from ~/.claude/.credentials.json
-# when running inside a skill script. For direct Bash tool calls, read it from the file.
-LS_API_KEY="${CLAUDE_PLUGIN_OPTION_API_KEY:-$LIGHTSOURCE_API_KEY}"
-if [ -z "$LS_API_KEY" ]; then
-  LS_API_KEY=$(jq -r '.pluginSecrets["lightsource@lightsource"].api_key' "$HOME/.claude/.credentials.json")
-fi
-curl -s -X POST https://api.lightsource.ai/graphql \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $LS_API_KEY" \
-  -d '{"query": "mutation Foo($id: ID!) { ... }", "variables": {"id": "..."}}'
-```
-
-- Always check the response for a top-level `errors` array — if present, report the errors and do not proceed as if the call succeeded
-- Store the presigned upload URL in a shell variable immediately after receiving it — never copy-paste it manually, as special characters will be mangled
 
 ## Common lookups
 
@@ -87,7 +96,7 @@ curl -s -X PUT "<uploadUrl>" \
   --data-binary @"<local-file-path>"
 ```
 
-No `Authorization` header — the URL is presigned.
+This is the one request that doesn't go through `lightsource-graphql`: the URL is presigned, so it carries no `Authorization` header and no API key. Store the URL in a shell variable as soon as Step 1 returns it and reference the variable — copy-pasting it mangles the special characters in the signature.
 
 ### Step 3 — Finalize upload
 
