@@ -6,7 +6,7 @@ description: Fire-and-forget pipeline that creates an RFQ (request for quote), a
 ## Arguments
 
 - RFQ name / title (required)
-- Input file path with parts list (required)
+- Input file with the parts list (required) — an attachment from the conversation or a path on disk
 - Collaborator name or email (optional) — team member to add as a collaborator; skip Phase 4 if not provided
 - Suppliers (optional) — skip Phase 3 if not provided
 - Internal message (optional) — custom message text; if provided, use it verbatim instead of the default summary

@@ -26,4 +26,4 @@ Execute this via the graphql-request skill. Present the result clearly, e.g.:
 > **Logged in as:** Jane Smith (jane@example.com)
 > **Active team:** Acme Corp (`acme`)
 
-If the API key is missing or invalid, tell the user to check their plugin config (`/plugin config lightsource`) or set `$LIGHTSOURCE_API_KEY`.
+This is also the credential check: if the key is missing or rejected, say so and relay the setup instructions from `graphql-request`, which owns credential handling.
