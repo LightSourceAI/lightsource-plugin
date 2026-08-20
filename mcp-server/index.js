@@ -373,7 +373,14 @@ function looksAuthy(errors) {
   return errors.some((e) => {
     const code = e && e.extensions && (e.extensions.code || e.extensions.errorCode);
     const haystack = `${code || ''} ${(e && e.message) || ''}`.toLowerCase();
-    return /unauthenticated|unauthorized|forbidden|invalid api key|expired key|permission denied/.test(haystack);
+    if (/unauthenticated|unauthorized|forbidden|invalid api key|expired key|permission denied/.test(haystack)) {
+      return true;
+    }
+    // A bare status-code message with no field path, e.g. "400: Bad Request".
+    // The API emits this when the auth layer refuses a credential, and it is
+    // the one failure most easily mistaken for a schema error: real schema
+    // errors name the offending field and carry a path.
+    return Boolean(e) && !e.path && /^(400|401|403):\s/.test(String(e.message || ''));
   });
 }
 

@@ -34,11 +34,7 @@ With the marketplace added, find **lightsource** in its listing and install it. 
 
 **Step 4 — Store your API key**:
 
-Copy a key from **Settings → API Keys** in the LightSource app.
-
-If the plugin offers a **Configure options** step — in the CLI it's under `/plugin` — enter the key there as **LightSource API key** and skip the rest of this step. It goes into your operating system's keychain rather than a file, and there is nothing else to set up.
-
-Otherwise, paste these four commands into a terminal — Terminal on macOS, Git Bash on Windows. Paste the key at the prompt; it stays hidden as you type.
+Copy a key from **Settings → API Keys** in the LightSource app, then paste these four commands into a terminal — Terminal on macOS, Git Bash on Windows. Paste the key at the prompt; it stays hidden as you type.
 
 ```bash
 mkdir -p ~/.config/lightsource
@@ -139,7 +135,7 @@ LIGHTSOURCE_API_ENDPOINT=...     # point at a staging API
 
 - **Network access.** Requests to `https://api.lightsource.ai/graphql` come from your own machine, so no administrator allowance is needed for them. What can still block you is anything that blocks the LightSource web app in your browser — a corporate proxy, VPN, or firewall — plus the storage host that presigned upload URLs point to, if you attach files.
 - **Desktop and CLI only.** Cowork on web and mobile does not run local MCP servers, so the skills need the desktop app or the Claude Code CLI. Installing the plugin in a cloud session won't help: the skills load, but every API call fails.
-- **Where the API key lives.** The MCP server checks three sources in order: `$LIGHTSOURCE_API_KEY`, the plugin's `api_key` option (keychain-backed, entered via **Configure options**), then `~/.config/lightsource/credentials.json`. Whichever you use, the key never enters a conversation: the server does not return it, redacts it from any error text that echoes it, and the skills are instructed never to print it or ask you to paste it into the chat. Ask Claude to check the credential status to see which source it actually used.
+- **Where the API key lives.** The MCP server checks three sources in order: `$LIGHTSOURCE_API_KEY`, the plugin's keychain-backed `api_key` option (see the CLI section — the desktop app has no UI for entering it), then `~/.config/lightsource/credentials.json`, which is the practical choice in Cowork. Whichever you use, the key never enters a conversation: the server does not return it, redacts it from any error text that echoes it, and the skills are instructed never to print it or ask you to paste it into the chat. Ask Claude to check the credential status to see which source it actually used.
 - **Diagnosing auth problems.** Ask Claude to check the LightSource credential status. That reports whether a key was found and which source it came from, without revealing it or calling the API — enough to tell "no key stored" apart from "key stored but rejected".
 - **Team and Enterprise plans.** Organizations can restrict which marketplaces members may add. If **Add marketplace** is missing or rejects the URL, your administrator needs to allow it or distribute the marketplace for everyone via **Organization settings → Plugins** on claude.ai.
 - **Transmitting an RFQ to suppliers** is deliberately out of scope. The skills create and populate RFQs; sending them out stays a human step in the LightSource UI.
@@ -153,7 +149,9 @@ The same plugin runs in the terminal if you prefer it. Install it separately the
 /plugin install lightsource@lightsource
 ```
 
-Credential setup is the same — Step 4 above applies to every surface. For CI or scripted runs where writing a file isn't practical, set the key in the environment instead; it takes precedence over the credentials file:
+Credential setup from Step 4 works here too, and the CLI adds a better option: run `/plugin`, choose **Configure options** for lightsource, and enter the key as **LightSource API key**. That stores it in your OS keychain instead of a file. This flow exists only in the CLI — the desktop app currently has no equivalent, which is why Step 4 uses a file.
+
+For CI or scripted runs where neither is practical, set the key in the environment; it takes precedence over both:
 
 ```bash
 export LIGHTSOURCE_API_KEY="your_api_key_here"

@@ -61,8 +61,14 @@ function startStub() {
       if (mode === 'authy_error') {
         return json(200, { data: null, errors: [{ message: 'Invalid API key', extensions: { code: 'UNAUTHENTICATED' } }] });
       }
+      if (mode === 'bare_400_data_null') {
+        return json(200, { data: null, errors: [{ message: '400: Bad Request' }] });
+      }
       if (mode === 'graphql_errors') {
-        return json(200, { data: null, errors: [{ message: 'Field "nope" does not exist' }] });
+        return json(200, {
+          data: null,
+          errors: [{ message: 'Cannot query field "nope" on type "Query".', path: ['query'] }],
+        });
       }
       if (mode === 'http_500') return json(500, { message: 'boom' });
       if (mode === 'leaky_error') {
@@ -422,6 +428,25 @@ test('an UNAUTHENTICATED extension code is classified as a rejected key', async 
   }
 });
 
+test('a bare "400: Bad Request" reads as an auth failure, not a schema error', async () => {
+  // Both response shapes the API produced for one revoked key: session nulled
+  // inside data, and data nulled outright. They must tell the same story.
+  for (const shape of ['session_null', 'bare_400_data_null']) {
+    mode = shape;
+    const client = createClient(envWithKey());
+    try {
+      const res = await client.request('tools/call', {
+        name: 'graphql_request',
+        arguments: { query: '{ sourcingProjectSearch(query: "", first: 1) { edges { node { id } } } }' },
+      });
+      assert.strictEqual(res.result.isError, true, shape);
+      assert.ok(/was rejected/.test(text(res)), `${shape} should read as a credential failure`);
+    } finally {
+      client.close();
+    }
+  }
+});
+
 test('ordinary GraphQL errors are surfaced as errors, not success', async () => {
   mode = 'graphql_errors';
   const client = createClient(envWithKey());
@@ -433,7 +458,7 @@ test('ordinary GraphQL errors are surfaced as errors, not success', async () => 
     assert.strictEqual(res.result.isError, true);
     const out = text(res);
     assert.ok(/GraphQL reported errors/.test(out));
-    assert.ok(/does not exist/.test(out));
+    assert.ok(/Cannot query field/.test(out));
     assert.ok(!/was rejected/.test(out), 'schema errors must not be blamed on the key');
   } finally {
     client.close();
